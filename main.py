@@ -1,152 +1,147 @@
+# main.py
 import pygame
-from pygame.locals import *
 from sys import exit
-from random import randint
+from settings import LARGURA, ALTURA, ALTURA_PAINEL, VELOCIDADE
+from snake import Cobra
+from fruit import Moca
+from ui import desenhar_placar, desenhar_cronometro, desenhar_tela_inicio, desenhar_tela_nome, desenhar_ranking
+from background import GerenciadorFundo
+from walls import desenhar_paredes
+from ranking import salvar_pontuacao
 
 pygame.init()
 
-# Dimensões da tela
-largura = 640
-altura = 480
-
-# Posições iniciais da cobra e da maçã
-x_cobra = int(largura / 2)
-y_cobra = int(altura / 2)
-
-velocidade = 10
-x_controle = velocidade
-y_controle = 0
-
-x_maca = randint(40, 600)
-y_maca = randint(50, 430)
-
-pontos = 0
-fonte = pygame.font.SysFont('arial', 40, bold=True, italic=True)
-
-tela = pygame.display.set_mode((largura, altura))
-pygame.display.set_caption('Jogo da Cobrinha')
+tela = pygame.display.set_mode((LARGURA, ALTURA))
+pygame.display.set_caption('Jogo da Cobrinha Modularizado')
 relogio = pygame.time.Clock()
 
-lista_cobra = []
-comprimento_inicial = 5
-morreu = False
+pontos = 0
+cobra = Cobra(LARGURA, ALTURA)
+maca = Moca()
+gerenciador_fundo = GerenciadorFundo()
 
-def aumenta_cobra(lista_cobra):
-    for x_e_y in lista_cobra:
-        pygame.draw.rect(tela, (0, 255, 0), (x_e_y[0], x_e_y[1], 20, 20))
+# Estados do jogo: 'INICIO', 'JOGANDO', 'PEDINDO_NOME', 'RANKING'
+estado_jogo = 'INICIO'
+nome_jogador = ""
+
+# Variáveis do cronómetro
+tempo_inicio = 0
+tempo_decorrido = 0
+
+def iniciar_partida():
+    global pontos, cobra, maca, estado_jogo, tempo_inicio
+    pontos = 0
+    cobra = Cobra(LARGURA, ALTURA)
+    maca = Moca()
+    estado_jogo = 'JOGANDO'
+    tempo_inicio = pygame.time.get_ticks()
 
 def reiniciar_jogo():
-    global pontos, comprimento_inicial, x_cobra, y_cobra, lista_cobra, lista_cabeca, x_maca, y_maca, morreu, x_controle, y_controle
-    pontos = 0
-    comprimento_inicial = 5
-    x_cobra = int(largura / 2)
-    y_cobra = int(altura / 2)
-    x_controle = velocidade
-    y_controle = 0
-    lista_cobra = []
-    lista_cabeca = []
-    x_maca = randint(40, 600)
-    y_maca = randint(50, 430)
-    morreu = False
+    global estado_jogo, nome_jogador
+    nome_jogador = ""
+    estado_jogo = 'INICIO'
 
-# Loop principal do jogo
 while True:
     relogio.tick(30)
-    tela.fill((255, 255, 255))
     
-    mensagem = f'Pontos: {pontos}'
-    texto_formatado = fonte.render(mensagem, True, (0, 0, 0))
+    if estado_jogo == 'INICIO':
+        # Desenha a tela de início e guarda o retângulo do botão gerado
+        ret_botao_jogar = desenhar_tela_inicio(tela)
 
-    # Captura de eventos
-    for event in pygame.event.get():
-        if event.type == QUIT:
-            pygame.quit()
-            exit()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            
+            # Clicar com o rato no botão Jogar ou carregar em Enter/Espaço
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1: # Clique esquerdo
+                    if ret_botao_jogar.collidepoint(event.pos):
+                        iniciar_partida()
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                    iniciar_partida()
 
-        if event.type == KEYDOWN:
-            if event.key == K_a:
-                if x_controle == velocidade:
-                    pass
+    elif estado_jogo == 'JOGANDO':
+        # 1. Camada de fundo e paredes
+        gerenciador_fundo.desenhar(tela, pontos)
+        desenhar_paredes(tela)
+
+        # Captura de eventos
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            if event.type == pygame.KEYDOWN:
+                if (event.key == pygame.K_a or event.key == pygame.K_LEFT) and cobra.x_controle != VELOCIDADE:
+                    cobra.x_controle = -VELOCIDADE
+                    cobra.y_controle = 0
+                if (event.key == pygame.K_d or event.key == pygame.K_RIGHT) and cobra.x_controle != -VELOCIDADE:
+                    cobra.x_controle = VELOCIDADE
+                    cobra.y_controle = 0
+                if (event.key == pygame.K_w or event.key == pygame.K_UP) and cobra.y_controle != VELOCIDADE:
+                    cobra.y_controle = -VELOCIDADE
+                    cobra.x_controle = 0
+                if (event.key == pygame.K_s or event.key == pygame.K_DOWN) and cobra.y_controle != VELOCIDADE:
+                    cobra.y_controle = VELOCIDADE
+                    cobra.x_controle = 0
+
+        # Atualiza o tempo decorrido em segundos
+        tempo_decorrido = (pygame.time.get_ticks() - tempo_inicio) // 1000
+
+        cobra.atualizar_movimento()
+
+        # Colisão com as paredes
+        if cobra.x < 20 or cobra.x >= LARGURA - 20 or cobra.y < ALTURA_PAINEL + 20 or cobra.y >= ALTURA - 20:
+            estado_jogo = 'PEDINDO_NOME'
+
+        ret_maca = maca.desenhar(tela)
+        ret_cobra = pygame.Rect(cobra.x, cobra.y, 20, 20)
+
+        # Colisão com a maçã
+        if ret_cobra.colliderect(ret_maca):
+            maca.gerar_nova_posicao()
+            pontos += 1
+            cobra.comprimento += 1
+
+        # Colisão com o próprio corpo
+        if cobra.verificar_colisao_propria():
+            estado_jogo = 'PEDINDO_NOME'
+
+        cobra.desenhar(tela)
+        
+        # Placar e cronómetro desenhados por último no painel superior
+        desenhar_placar(tela, pontos)
+        desenhar_cronometro(tela, tempo_decorrido)
+
+    elif estado_jogo == 'PEDINDO_NOME':
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    salvar_pontuacao(nome_jogador, pontos, tempo_decorrido)
+                    estado_jogo = 'RANKING'
+                elif event.key == pygame.K_BACKSPACE:
+                    nome_jogador = nome_jogador[:-1]
                 else:
-                    x_controle = -velocidade
-                    y_controle = 0
-            if event.key == K_d:
-                if x_controle == -velocidade:
-                    pass
-                else:
-                    x_controle = velocidade
-                    y_controle = 0
-            if event.key == K_w:
-                if y_controle == velocidade:
-                    pass
-                else:
-                    y_controle = -velocidade
-                    x_controle = 0
-            if event.key == K_s:
-                if y_controle == -velocidade:
-                    pass
-                else:
-                    y_controle = velocidade
-                    x_controle = 0
+                    if len(nome_jogador) < 10 and event.unicode.isprintable():
+                        nome_jogador += event.unicode
+                        
+        desenhar_tela_nome(tela, nome_jogador)
 
-    # Movimentação contínua da cobra
-    x_cobra = x_cobra + x_controle
-    y_cobra = y_cobra + y_controle
+    elif estado_jogo == 'RANKING':
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    reiniciar_jogo()
+                    
+        desenhar_ranking(tela)
 
-    # Desenhando os objetos na tela
-    cobra = pygame.draw.rect(tela, (0, 255, 0), (x_cobra, y_cobra, 20, 20))
-    maca = pygame.draw.rect(tela, (255, 0, 0), (x_maca, y_maca, 20, 20))
-
-    # Detecção de colisão com a maçã
-    if cobra.colliderect(maca):
-        x_maca = randint(40, 600)
-        y_maca = randint(50, 430)
-        pontos += 1
-        comprimento_inicial += 1
-
-    # Lógica do corpo da cobra
-    lista_cabeca = []
-    lista_cabeca.append(x_cobra)
-    lista_cabeca.append(y_cobra)
-
-    lista_cobra.append(lista_cabeca)
-
-    # Lógica de Game Over se a cobra encostar em si mesma
-    if lista_cobra.count(lista_cabeca) > 1:
-        fonte2 = pygame.font.SysFont('arial', 20, True, True)
-        mensagem_game_over = 'Game Over! Pressione a tecla R para jogar novamente'
-        texto_formatado_go = fonte2.render(mensagem_game_over, True, (0, 0, 0))
-        ret_texto = texto_formatado_go.get_rect()
-
-        morreu = True
-        while morreu:
-            tela.fill((255, 255, 255))
-            for event in pygame.event.get():
-                if event.type == QUIT:
-                    pygame.quit()
-                    exit()
-                if event.type == KEYDOWN:
-                    if event.key == K_r:
-                        reiniciar_jogo()
-
-            ret_texto.center = (largura // 2, altura // 2)
-            tela.blit(texto_formatado_go, ret_texto)
-            pygame.display.update()
-
-    # Passagem pelas bordas da tela (atravessar a parede)
-    if x_cobra > largura:
-        x_cobra = 0
-    if x_cobra < 0:
-        x_cobra = largura
-    if y_cobra > altura:
-        y_cobra = 0
-    if y_cobra < 0:
-        y_cobra = altura
-
-    if len(lista_cobra) > comprimento_inicial:
-        del lista_cobra[0]
-
-    aumenta_cobra(lista_cobra)
-
-    tela.blit(texto_formatado, (400, 40))
     pygame.display.update()
